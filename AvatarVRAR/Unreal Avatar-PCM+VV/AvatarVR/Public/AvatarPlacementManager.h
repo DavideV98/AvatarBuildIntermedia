@@ -1,3 +1,5 @@
+// AvatarVR/Public/AvatarPlacementManager.h
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -75,13 +77,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Placement")
 	void ResolveRuntimeUserActor();
 
-	UFUNCTION(BlueprintCallable, Category = "Placement")
-	void PlaceAvatarUsingFloorZ(float FloorZ);
-
-	UFUNCTION(BlueprintCallable, Category = "Placement")
-	void PlaceAvatarUsingFloorAnchor(AActor* FloorAnchorActor);
-
-	UFUNCTION(BlueprintCallable, Category = "Placement")
 	bool PlaceAvatarNearUserAvoidingObstacles(AActor* RoomActor, AActor* FloorAnchorActor);
 
 private:
@@ -90,4 +85,8 @@ private:
 
 	AActor* FindActorByTag(FName InTag) const;
 	void CacheInitialAvatarTransform();
+
+	// Helper interni: non fanno più parte della superficie pubblica del manager.
+	void PlaceAvatarUsingFloorZ(float FloorZ);
+	void PlaceAvatarUsingFloorAnchor(AActor* FloorAnchorActor);
 };

@@ -1,3 +1,5 @@
+// AvatarVR/Public/ARSessionManager.h
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -77,17 +79,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Bootstrap")
 	void OnPassthroughFailed();
 
-	// Compatibilità temporanea finché SceneAccessManager è ancora nel progetto
-	UFUNCTION(BlueprintCallable, Category = "Bootstrap")
-	void OnPlacementStageFinished(bool bUsedFallback);
-
 	UFUNCTION(BlueprintImplementableEvent, Category = "Bootstrap")
 	void InitializePassthroughRuntime();
 
 private:
 	void RunSceneStage();
 	void ClearPassthroughTimeout();
-
 	void ResolveMrukSubsystem();
 	void BindMrukSceneLoaded();
 	void UnbindMrukSceneLoaded();

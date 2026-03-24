@@ -1,8 +1,9 @@
+// AvatarVR/Private/ARSessionManager.cpp
+
 #include "ARSessionManager.h"
 
 #include "AvatarBehaviorManager.h"
 #include "AvatarPlacementManager.h"
-
 #include "Engine/GameInstance.h"
 #include "EngineUtils.h"
 #include "MRUtilityKitRoom.h"
@@ -65,8 +66,7 @@ void AARSessionManager::ResolveManagers()
 		TEXT("ARSessionManager - PlacementManager: %s | BehaviorManager: %s | MRUKSubsystem: %s"),
 		PlacementManager ? *PlacementManager->GetName() : TEXT("NULL"),
 		BehaviorManager ? *BehaviorManager->GetName() : TEXT("NULL"),
-		MRUKSubsystem ? TEXT("VALID") : TEXT("NULL")
-	);
+		MRUKSubsystem ? TEXT("VALID") : TEXT("NULL"));
 }
 
 void AARSessionManager::ResolveMrukSubsystem()
@@ -85,7 +85,6 @@ void AARSessionManager::ResolveMrukSubsystem()
 void AARSessionManager::StartBootstrap()
 {
 	BootstrapState = EARBootstrapState::Starting;
-
 	bPassthroughHandled = false;
 	bSceneLoadStarted = false;
 	bBootstrapFinalized = false;
@@ -103,8 +102,7 @@ void AARSessionManager::StartBootstrap()
 			this,
 			&AARSessionManager::OnPassthroughFailed,
 			PassthroughTimeoutSeconds,
-			false
-		);
+			false);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("ARSessionManager - Bootstrap started"));
@@ -125,8 +123,7 @@ void AARSessionManager::OnPassthroughReady()
 			LogTemp,
 			Log,
 			TEXT("ARSessionManager - Ignoring duplicate passthrough ready. State=%d"),
-			static_cast<uint8>(BootstrapState)
-		);
+			static_cast<uint8>(BootstrapState));
 		return;
 	}
 
@@ -160,11 +157,6 @@ void AARSessionManager::OnPassthroughFailed()
 
 	BootstrapState = EARBootstrapState::Failed;
 	FinalizeBootstrap(true);
-}
-
-void AARSessionManager::OnPlacementStageFinished(bool bUsedFallback)
-{
-	FinalizeBootstrap(bUsedFallback);
 }
 
 void AARSessionManager::RunSceneStage()
@@ -264,8 +256,7 @@ void AARSessionManager::HandleMrukSceneLoaded(bool bSuccess)
 		LogTemp,
 		Log,
 		TEXT("ARSessionManager - MRUK scene loaded callback. Success=%s"),
-		bSuccess ? TEXT("true") : TEXT("false")
-	);
+		bSuccess ? TEXT("true") : TEXT("false"));
 
 	if (!PlacementManager)
 	{
@@ -334,6 +325,5 @@ void AARSessionManager::FinalizeBootstrap(bool bUsedFallback)
 		Log,
 		TEXT("ARSessionManager - Bootstrap finalized. State=%d UsedFallback=%s"),
 		static_cast<uint8>(BootstrapState),
-		bUsedFallback ? TEXT("true") : TEXT("false")
-	);
+		bUsedFallback ? TEXT("true") : TEXT("false"));
 }
