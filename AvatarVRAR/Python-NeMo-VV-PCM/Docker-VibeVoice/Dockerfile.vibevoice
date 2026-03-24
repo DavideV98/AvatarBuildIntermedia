@@ -1,0 +1,31 @@
+FROM nvcr.io/nvidia/pytorch:25.02-py3
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONPATH=/app:/app/VibeVoice
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+# Repo ufficiale VibeVoice
+RUN git clone https://github.com/microsoft/VibeVoice.git /app/VibeVoice
+
+# Installa VibeVoice realtime
+WORKDIR /app/VibeVoice
+RUN pip install --no-cache-dir -e .[streamingtts]
+
+# Dipendenze del bridge locale
+WORKDIR /app
+RUN pip install --no-cache-dir \
+    fastapi \
+    "uvicorn[standard]" \
+    requests \
+    orjson
+
+WORKDIR /app
+
+CMD ["sh", "-c", "uvicorn vibevoice_bridge.app:app --host 0.0.0.0 --port ${VIBEVOICE_PORT:-8001}"]

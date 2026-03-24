@@ -1,0 +1,49 @@
+services:
+  avatar-STT:
+    build:
+      context: ..
+      dockerfile: Docker-NeMo/Dockerfile.NeMo
+
+    image: avatar-nemo-stt:local
+    container_name: avatar-STT
+
+    shm_size: "16gb"
+    restart: unless-stopped
+
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    gpus: all
+    working_dir: /work
+
+    volumes:
+      - ..:/work
+      - nemo_cache:/root/.cache
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      NGC_API_KEY: ${NGC_API_KEY}
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /work
+      TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+      HF_HOME: /root/.cache/huggingface
+
+      WAV_DIR: /work/recordings
+      NEMO_STT_MODEL: nvidia/stt_it_fastconformer_hybrid_large_pc
+      ALLOW_TF32: "1"
+
+      STT_BATCH_SIZE: "1"
+      STT_NUM_WORKERS: "0"
+      STT_RETURN_HYPOTHESES: "0"
+      STT_TIMESTAMPS: "0"
+      STT_USE_LHOTSE: "0"
+      STT_VERBOSE: "0"
+
+      STT_WARMUP: "1"
+      STT_WARMUP_DURATION_S: "1.0"
+
+volumes:
+  nemo_cache:

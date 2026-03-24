@@ -1,0 +1,46 @@
+services:
+  vibevoice:
+    build:
+      context: ..
+      dockerfile: Docker-VibeVoice/Dockerfile.vibevoice
+
+    image: avatar-vibevoice:local
+    container_name: avatar-VibeVoice
+    restart: unless-stopped
+
+    ports:
+      - "8001:8001"
+
+    shm_size: "16gb"
+    ipc: host
+
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    env_file:
+      - ../.env
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+      HF_HOME: /root/.cache/huggingface
+      PYTHONPATH: /app:/app/VibeVoice
+
+      # override container-side: Unreal gira sull'host, non dentro il container
+      UNREAL_PCM_URL: http://host.docker.internal:7777/ace/audio_samples
+
+      # path container-side per il preset voce
+      VIBEVOICE_VOICE_PATH: /app/vibevoice_bridge/voices/it-Spk1_man.pt
+      VIBEVOICE_VOICES_DIR: /app/vibevoice_bridge/voices
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - ../vibevoice_bridge:/app/vibevoice_bridge
+      - vibevoice_cache:/root/.cache/huggingface
+
+    gpus: all
+
+volumes:
+  vibevoice_cache:
