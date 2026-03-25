@@ -20,9 +20,98 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 
-#include "ACEAudioSamplesLibrary.h"
+#include "ACERuntimeModule.h"
 #include "ACEBlueprintLibrary.h"
 #include "ACEAudioCurveSourceComponent.h"
+
+namespace
+{
+    static bool ValidateACECommon(
+        UACEAudioCurveSourceComponent* Consumer,
+        int32 NumChannels,
+        int32 SampleRate,
+        int32 NumSamples,
+        FString& OutErr)
+    {
+        if (!Consumer)
+        {
+            OutErr = TEXT("Consumer nullo (UACEAudioCurveSourceComponent).");
+            return false;
+        }
+
+        if (NumChannels <= 0 || NumChannels > 2)
+        {
+            OutErr = FString::Printf(TEXT("NumChannels non valido: %d (atteso 1 o 2)."), NumChannels);
+            return false;
+        }
+
+        if (SampleRate <= 0)
+        {
+            OutErr = FString::Printf(TEXT("SampleRate non valido: %d."), SampleRate);
+            return false;
+        }
+
+        if (NumSamples <= 0)
+        {
+            OutErr = TEXT("Samples vuoti.");
+            return false;
+        }
+
+        if ((NumSamples % NumChannels) != 0)
+        {
+            OutErr = FString::Printf(
+                TEXT("Samples non allineati ai canali: NumSamples=%d NumChannels=%d."),
+                NumSamples,
+                NumChannels
+            );
+            return false;
+        }
+
+        return true;
+    }
+
+    static bool AnimateSamplesToACE(
+        UACEAudioCurveSourceComponent* Consumer,
+        const TArray<float>& SamplesFloat,
+        int32 NumChannels,
+        int32 SampleRate,
+        bool bEndOfSamples,
+        FName A2FProviderName)
+    {
+        FString Err;
+        if (!ValidateACECommon(Consumer, NumChannels, SampleRate, SamplesFloat.Num(), Err))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[TTSWebhook] AnimateSamplesToACE: %s"), *Err);
+            return false;
+        }
+
+        const TArrayView<const float> View(SamplesFloat.GetData(), SamplesFloat.Num());
+
+        const bool bOk = FACERuntimeModule::Get().AnimateFromAudioSamples(
+            Consumer,
+            View,
+            NumChannels,
+            SampleRate,
+            bEndOfSamples,
+            TOptional<FAudio2FaceEmotion>(),
+            nullptr,
+            A2FProviderName
+        );
+
+        if (!bOk)
+        {
+            UE_LOG(
+                LogTemp,
+                Warning,
+                TEXT("[TTSWebhook] AnimateSamplesToACE fallita (provider=%s end=%d)"),
+                *A2FProviderName.ToString(),
+                bEndOfSamples ? 1 : 0
+            );
+        }
+
+        return bOk;
+    }
+}
 
 UTTSWebhookComponent::UTTSWebhookComponent()
 {
@@ -519,7 +608,7 @@ bool UTTSWebhookComponent::SendSamplesToACE(const TArray<float>& Samples, int32 
         return false;
     }
 
-    const bool bOk = UACEAudioSamplesLibrary::AnimateFromAudioSamplesFloat(
+    const bool bOk = AnimateSamplesToACE(
         AceConsumer,
         Samples,
         NumChannels,
@@ -533,7 +622,7 @@ bool UTTSWebhookComponent::SendSamplesToACE(const TArray<float>& Samples, int32 
         UE_LOG(
             LogTemp,
             Warning,
-            TEXT("[TTSWebhook] AnimateFromAudioSamplesFloat fallita provider=%s end=%d samples=%d sr=%d ch=%d"),
+            TEXT("[TTSWebhook] AnimateSamplesToACE fallita provider=%s end=%d samples=%d sr=%d ch=%d"),
             *A2FProviderName.ToString(),
             bEndOfSamples ? 1 : 0,
             Samples.Num(),

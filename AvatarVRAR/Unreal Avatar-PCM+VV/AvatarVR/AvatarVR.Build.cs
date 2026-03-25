@@ -11,7 +11,9 @@ public class AvatarVR : ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
-            "InputCore"
+            "InputCore",
+            "MRUtilityKit",
+            "OculusXRAnchors"
         });
 
         PrivateDependencyModuleNames.AddRange(new string[]
@@ -22,8 +24,6 @@ public class AvatarVR : ModuleRules
             "JsonUtilities",
             "ACECore",
             "ACERuntime",
-            "MRUtilityKit",
-            "OculusXRAnchors",
             "OculusXRScene"
         });
     }

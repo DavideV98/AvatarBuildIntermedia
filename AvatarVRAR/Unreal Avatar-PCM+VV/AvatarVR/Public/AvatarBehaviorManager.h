@@ -92,9 +92,6 @@ public:
 	bool bACEReady = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Greeting|HTTP")
-	bool bUseNativeGreetingHttp = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Greeting|HTTP")
 	FString GreetingServerUrl = TEXT("http://127.0.0.1:8011/greeting/start");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Greeting|HTTP")
@@ -152,9 +149,6 @@ public:
 	void NotifySpeechPlaybackCompleted();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Greeting")
-	void BP_RequestGreetingWebhook(bool bIsStartupGreeting);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Greeting")
 	void BP_OnGreetingTriggered(bool bIsStartupGreeting);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Greeting")
@@ -190,9 +184,7 @@ private:
 	void SendGreetingRequest(bool bIsStartupGreeting);
 	FString BuildGreetingText(bool bIsStartupGreeting) const;
 	void HandleGreetingStartTimeout();
-
 	void TryBindToTTSWebhook();
 	void UnbindFromTTSWebhook();
-
 	bool IsGreetingBlockedByPlacement() const;
 };

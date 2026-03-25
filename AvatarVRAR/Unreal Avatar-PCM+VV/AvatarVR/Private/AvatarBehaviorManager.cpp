@@ -10,6 +10,7 @@
 #include "Interfaces/IHttpResponse.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Misc/Guid.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "TimerManager.h"
@@ -82,7 +83,14 @@ void AAvatarBehaviorManager::Tick(float DeltaSeconds)
 
 void AAvatarBehaviorManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(StartupGreetingTimerHandle);
+		World->GetTimerManager().ClearTimer(GreetingStartTimeoutTimerHandle);
+	}
+
 	UnbindFromTTSWebhook();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -150,12 +158,7 @@ void AAvatarBehaviorManager::ResolveRuntimeUserActor()
 
 void AAvatarBehaviorManager::TryBindToTTSWebhook()
 {
-	if (TTSWebhookComponentRef)
-	{
-		return;
-	}
-
-	if (!AvatarActor)
+	if (TTSWebhookComponentRef || !AvatarActor)
 	{
 		return;
 	}
@@ -177,12 +180,7 @@ void AAvatarBehaviorManager::TryBindToTTSWebhook()
 	TTSWebhookComponentRef->OnUtteranceStarted.AddDynamic(this, &AAvatarBehaviorManager::HandleUtteranceStarted);
 	TTSWebhookComponentRef->OnUtteranceCompleted.AddDynamic(this, &AAvatarBehaviorManager::HandleUtteranceCompleted);
 
-	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("AvatarBehaviorManager - Bound a TTSWebhookComponent su %s"),
-		*AvatarActor->GetName()
-	);
+	UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - Bound a TTSWebhookComponent su %s"), *AvatarActor->GetName());
 }
 
 void AAvatarBehaviorManager::UnbindFromTTSWebhook()
@@ -288,6 +286,7 @@ bool AAvatarBehaviorManager::IsUserInGreetingZone() const
 
 	FVector AvatarForward = AvatarActor->GetActorForwardVector();
 	AvatarForward.Z = 0.0f;
+
 	if (!AvatarForward.Normalize())
 	{
 		return false;
@@ -301,7 +300,6 @@ bool AAvatarBehaviorManager::IsUserInGreetingZone() const
 
 	const float Dot = FVector::DotProduct(AvatarForward, ToUser);
 	const float Threshold = FMath::Cos(FMath::DegreesToRadians(GreetingFOVDegrees * 0.5f));
-
 	return Dot >= Threshold;
 }
 
@@ -319,8 +317,7 @@ bool AAvatarBehaviorManager::CanTriggerGreeting() const
 
 bool AAvatarBehaviorManager::CanProcessWaveUnlock() const
 {
-	return CurrentActivityState == EAvatarActivityState::Idle
-		&& bGreetingLocked;
+	return CurrentActivityState == EAvatarActivityState::Idle && bGreetingLocked;
 }
 
 void AAvatarBehaviorManager::SetActivityState(EAvatarActivityState NewState)
@@ -362,62 +359,34 @@ void AAvatarBehaviorManager::NotifyACEReady()
 		bStartupGreetingSent ? TEXT("true") : TEXT("false")
 	);
 
-	if (!bEnableStartupGreeting || bStartupGreetingSent)
+	if (bUseACEReadySignalForStartup)
 	{
-		return;
+		TryStartupGreeting();
 	}
-
-	if (IsGreetingBlockedByPlacement())
-	{
-		UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - ACE ready, waiting for placement ready"));
-		return;
-	}
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(StartupGreetingTimerHandle);
-	}
-
-	TryStartupGreeting();
 }
 
 void AAvatarBehaviorManager::NotifyPlacementReady()
 {
-	if (bPlacementReady)
-	{
-		return;
-	}
-
 	bPlacementReady = true;
 
 	UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - Placement ready notified"));
 
-	if (!bEnableStartupGreeting || bStartupGreetingSent)
+	if (!bUseACEReadySignalForStartup || bACEReady)
 	{
-		return;
+		TryStartupGreeting();
 	}
-
-	if (bUseACEReadySignalForStartup && !bACEReady)
-	{
-		UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - Placement ready, waiting for ACE ready"));
-		return;
-	}
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(StartupGreetingTimerHandle);
-	}
-
-	TryStartupGreeting();
 }
 
 void AAvatarBehaviorManager::NotifySpeechPlaybackStarted()
 {
-	bGreetingAwaitingPlaybackStart = false;
-
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(GreetingStartTimeoutTimerHandle);
+	}
+
+	if (bGreetingAwaitingPlaybackStart)
+	{
+		bGreetingAwaitingPlaybackStart = false;
 	}
 
 	SetActivityState(EAvatarActivityState::Speaking);
@@ -425,14 +394,18 @@ void AAvatarBehaviorManager::NotifySpeechPlaybackStarted()
 
 void AAvatarBehaviorManager::NotifySpeechPlaybackCompleted()
 {
-	bGreetingAwaitingPlaybackStart = false;
-
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(GreetingStartTimeoutTimerHandle);
 	}
 
+	bGreetingAwaitingPlaybackStart = false;
 	SetActivityState(EAvatarActivityState::Idle);
+}
+
+bool AAvatarBehaviorManager::DetectWaveGesture_Implementation() const
+{
+	return false;
 }
 
 void AAvatarBehaviorManager::HandleGreetingStartTimeout()
@@ -444,7 +417,11 @@ void AAvatarBehaviorManager::HandleGreetingStartTimeout()
 
 	bGreetingAwaitingPlaybackStart = false;
 	bGreetingLocked = false;
-	bStartupGreetingSent = false;
+
+	if (bStartupGreetingSent && LastGreetingUtteranceId.IsEmpty())
+	{
+		bStartupGreetingSent = false;
+	}
 
 	SetActivityState(EAvatarActivityState::Idle);
 
@@ -456,6 +433,7 @@ void AAvatarBehaviorManager::SendGreetingRequest(bool bIsStartupGreeting)
 	if (GreetingServerUrl.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("SendGreetingRequest - GreetingServerUrl vuoto"));
+
 		bGreetingLocked = false;
 
 		if (bIsStartupGreeting)
@@ -476,26 +454,24 @@ void AAvatarBehaviorManager::SendGreetingRequest(bool bIsStartupGreeting)
 	Obj->SetStringField(TEXT("event"), TEXT("greeting_request"));
 	Obj->SetStringField(TEXT("trace_id"), LastGreetingTraceId);
 	Obj->SetStringField(TEXT("utterance_id"), LastGreetingUtteranceId);
-	Obj->SetStringField(TEXT("text"), TextToSend);
 	Obj->SetStringField(TEXT("speaker_name"), GreetingSpeakerName);
+	Obj->SetStringField(TEXT("text"), TextToSend);
 	Obj->SetBoolField(TEXT("is_startup_greeting"), bIsStartupGreeting);
 
 	FString Body;
-	{
-		TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
-		FJsonSerializer::Serialize(Obj.ToSharedRef(), Writer);
-	}
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
+	FJsonSerializer::Serialize(Obj.ToSharedRef(), Writer);
 
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Req = FHttpModule::Get().CreateRequest();
 	Req->SetURL(GreetingServerUrl);
 	Req->SetVerb(TEXT("POST"));
-	Req->SetHeader(TEXT("Content-Type"), TEXT("application/json; charset=utf-8"));
+	Req->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 	Req->SetContentAsString(Body);
 
 	TWeakObjectPtr<AAvatarBehaviorManager> WeakThis(this);
 
 	Req->OnProcessRequestComplete().BindLambda(
-		[WeakThis, bIsStartupGreeting](FHttpRequestPtr, FHttpResponsePtr Resp, bool bSucceeded)
+		[WeakThis, bIsStartupGreeting](FHttpRequestPtr Request, FHttpResponsePtr Resp, bool bSucceeded)
 		{
 			if (!WeakThis.IsValid())
 			{
@@ -503,13 +479,12 @@ void AAvatarBehaviorManager::SendGreetingRequest(bool bIsStartupGreeting)
 			}
 
 			AAvatarBehaviorManager* Self = WeakThis.Get();
+			if (!Self)
+			{
+				return;
+			}
 
-			const bool bHttpOk =
-				bSucceeded &&
-				Resp.IsValid() &&
-				Resp->GetResponseCode() >= 200 &&
-				Resp->GetResponseCode() < 300;
-
+			const bool bHttpOk = bSucceeded && Resp.IsValid() && EHttpResponseCodes::IsOk(Resp->GetResponseCode());
 			if (!bHttpOk)
 			{
 				UE_LOG(
@@ -523,6 +498,8 @@ void AAvatarBehaviorManager::SendGreetingRequest(bool bIsStartupGreeting)
 
 				Self->bGreetingAwaitingPlaybackStart = false;
 				Self->bGreetingLocked = false;
+				Self->LastGreetingTraceId.Empty();
+				Self->LastGreetingUtteranceId.Empty();
 
 				if (bIsStartupGreeting)
 				{
@@ -569,6 +546,8 @@ void AAvatarBehaviorManager::TriggerGreeting(bool bIsStartupGreeting)
 
 	bGreetingLocked = true;
 	bGreetingAwaitingPlaybackStart = true;
+	LastGreetingTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastGreetingTime;
+
 	SetActivityState(EAvatarActivityState::PerformingAction);
 
 	if (bIsStartupGreeting)
@@ -576,22 +555,15 @@ void AAvatarBehaviorManager::TriggerGreeting(bool bIsStartupGreeting)
 		bStartupGreetingSent = true;
 	}
 
-	LastGreetingTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
-
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(GreetingStartTimeoutTimerHandle);
-
-		if (GreetingStartTimeoutSeconds > 0.0f)
-		{
-			World->GetTimerManager().SetTimer(
-				GreetingStartTimeoutTimerHandle,
-				this,
-				&AAvatarBehaviorManager::HandleGreetingStartTimeout,
-				GreetingStartTimeoutSeconds,
-				false
-			);
-		}
+		World->GetTimerManager().SetTimer(
+			GreetingStartTimeoutTimerHandle,
+			this,
+			&AAvatarBehaviorManager::HandleGreetingStartTimeout,
+			GreetingStartTimeoutSeconds,
+			false
+		);
 	}
 
 	UE_LOG(
@@ -602,15 +574,7 @@ void AAvatarBehaviorManager::TriggerGreeting(bool bIsStartupGreeting)
 	);
 
 	BP_OnGreetingTriggered(bIsStartupGreeting);
-
-	if (bUseNativeGreetingHttp)
-	{
-		SendGreetingRequest(bIsStartupGreeting);
-	}
-	else
-	{
-		BP_RequestGreetingWebhook(bIsStartupGreeting);
-	}
+	SendGreetingRequest(bIsStartupGreeting);
 }
 
 void AAvatarBehaviorManager::UnlockGreetingFromWave()
@@ -624,49 +588,26 @@ void AAvatarBehaviorManager::UnlockGreetingFromWave()
 	bUserWasInGreetingZone = IsUserInGreetingZone();
 
 	UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - Greeting unlocked by wave"));
-	BP_OnGreetingUnlockedByWave();
-}
 
-bool AAvatarBehaviorManager::DetectWaveGesture_Implementation() const
-{
-	return false;
+	BP_OnGreetingUnlockedByWave();
 }
 
 void AAvatarBehaviorManager::TryStartupGreeting()
 {
-	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("AvatarBehaviorManager - TryStartupGreeting. StartupSent=%s Enable=%s ACEReady=%s PlacementReady=%s State=%d"),
-		bStartupGreetingSent ? TEXT("true") : TEXT("false"),
-		bEnableStartupGreeting ? TEXT("true") : TEXT("false"),
-		bACEReady ? TEXT("true") : TEXT("false"),
-		bPlacementReady ? TEXT("true") : TEXT("false"),
-		static_cast<uint8>(CurrentActivityState)
-	);
-
-	if (bStartupGreetingSent || !bEnableStartupGreeting)
+	if (!bEnableGreeting || !bEnableStartupGreeting || bStartupGreetingSent)
 	{
 		return;
 	}
 
 	if (bUseACEReadySignalForStartup && !bACEReady)
 	{
+		UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - ACE ready, waiting for placement ready"));
 		return;
 	}
 
 	if (IsGreetingBlockedByPlacement())
 	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimer(
-				StartupGreetingTimerHandle,
-				this,
-				&AAvatarBehaviorManager::TryStartupGreeting,
-				0.25f,
-				false
-			);
-		}
+		UE_LOG(LogTemp, Log, TEXT("AvatarBehaviorManager - Startup greeting blocked by placement readiness"));
 		return;
 	}
 
@@ -684,6 +625,17 @@ void AAvatarBehaviorManager::TryStartupGreeting()
 		}
 		return;
 	}
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("AvatarBehaviorManager - TryStartupGreeting. StartupSent=%s Enable=%s ACEReady=%s PlacementReady=%s State=%d"),
+		bStartupGreetingSent ? TEXT("true") : TEXT("false"),
+		bEnableStartupGreeting ? TEXT("true") : TEXT("false"),
+		bACEReady ? TEXT("true") : TEXT("false"),
+		bPlacementReady ? TEXT("true") : TEXT("false"),
+		static_cast<uint8>(CurrentActivityState)
+	);
 
 	TriggerGreeting(true);
 }
